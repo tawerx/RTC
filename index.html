@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  </head>
+  <body>
+    <button class="offer">send offer</button>
+    <button class="answer">send answer</button>
+    <p>local</p>
+    <video class="localVideo" width="200" height="200" autoplay></video>
+    <p>remote</p>
+    <video src="" class="remoteVideo" width="200" height="200" autoplay></video>
+    <script>
+      const socket = io("http://172.20.10.2:8888/", {
+        transports: ["websocket"],
+      });
+
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+
+      const localVideo = document.querySelector(".localVideo");
+      const remoteVideo = document.querySelector(".remoteVideo");
+
+      const streams = {
+        localStream: null,
+        remoteStream: null,
+      };
+
+      navigator.mediaDevices
+        .getUserMedia({ audio: true, video: true })
+        .then((stream) => {
+          streams.localStream = stream;
+          localVideo.srcObject = stream;
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        })
+        .catch((e) => console.log(e));
+
+      pc.addEventListener("icecandidate", (e) => {
+        console.log("ice");
+        if (e.candidate) {
+          socket.emit("ice", e.candidate);
+        }
+      });
+
+      pc.addEventListener("track", async (e) => {
+        console.log("track");
+        console.log(e);
+        const [remoteStream] = e.streams;
+        streams.remoteStream = remoteStream;
+        console.log(remoteStream);
+        remoteVideo.srcObject = remoteStream;
+      });
+
+      const offerBtn = document.querySelector(".offer");
+      const answerBtn = document.querySelector(".answer");
+
+      offerBtn.addEventListener("click", async () => {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("offer", offer);
+      });
+      answerBtn.addEventListener("click", async () => {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit("answer", answer);
+      });
+
+      socket.on("getOffer", async (offer) => {
+        const offerDesc = new RTCSessionDescription(offer);
+        await pc.setRemoteDescription(offerDesc);
+      });
+
+      socket.on("getAnswer", async (answer) => {
+        const answerDesc = new RTCSessionDescription(answer);
+        await pc.setRemoteDescription(answerDesc);
+      });
+
+      socket.on("getIce", async (ice) => {
+        await pc.addIceCandidate(ice);
+      });
+    </script>
+  </body>
+</html>
